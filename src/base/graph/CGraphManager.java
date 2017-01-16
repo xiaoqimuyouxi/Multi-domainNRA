@@ -5,7 +5,6 @@ package base.graph;
 
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,10 +13,11 @@ import java.util.Scanner;
 import base.Configure;
 
 public class CGraphManager {
-	public CGraph graph = new CGraph();	//所管理的底层拓扑图
+	public CGraph graph = new CGraph();	//所管理的底层拓扑图，在整个部署过程中，graph只有节点资源、链路资源的变化
 	private String vertexInfoPath;	//图中节点信息文件路径
 	private String edgeInfoPath;	//图中边信息文件路径
-	public CGraph abstractGraph = new CGraph();		//由底层拓扑抽象出的抽象网络图
+	public CGraph operateGraph = new CGraph();	//在程序中，
+	public CGraph initAbstractGraph = new CGraph();		//由底层拓扑初次抽象出的抽象网络图
 	
 	public CGraphManager(String vertexInfoPath, String edgeInfoPath) {
 		this.vertexInfoPath = vertexInfoPath;
@@ -34,18 +34,42 @@ public class CGraphManager {
 		edgeDomain();
 		vertexDomain();
 		dijkstraAllBorderInEachDomain();
-		generateAbstrateGraph();
+		functionDomain();
+		generateOperateGraph();
+		generateInitAbstrateGraph();
+	}
+	
+	public void testDomainFunctionSet() {
+		System.out.println("测试各个域所能提供的功能集合：");
+		for (Integer domainKey : graph.domainFunctionSetMap.keySet()) {
+			System.out.print("域 " + domainKey + " 所能提供的功能集合为：");
+			for (Integer functionKey : graph.domainFunctionSetMap.get(domainKey)) {
+				System.out.print(functionKey + " ");
+			}
+			System.out.println();
+		}
+	}
+	
+	public void testNodeFunctionSet() {
+		System.out.println("测试每个节点的功能集合：");
+		for (Integer vertexKey : graph.vertexMap.keySet()) {
+			System.out.print("节点 " + vertexKey + " 的功能集合为：");
+			for (Integer functionKey : graph.vertexMap.get(vertexKey).functionSet) {
+				System.out.print(functionKey + " ");
+			}
+			System.out.println();
+		}
 	}
 	
 	public void testAbstractGraph() {
 		System.out.println("测试抽象拓扑图");
-		for (Integer vertexKey : abstractGraph.vertexMap.keySet()) {
-			CVertex vertex = abstractGraph.vertexMap.get(vertexKey);
+		for (Integer vertexKey : initAbstractGraph.vertexMap.keySet()) {
+			CVertex vertex = initAbstractGraph.vertexMap.get(vertexKey);
 			System.out.println(vertex.getVertexID() + " " + vertex.getDomainLocation());
 		}
 		
-		for (Integer edgeKey : abstractGraph.edgeMap.keySet()) {
-			CEdge edge = abstractGraph.edgeMap.get(edgeKey);
+		for (Integer edgeKey : initAbstractGraph.edgeMap.keySet()) {
+			CEdge edge = initAbstractGraph.edgeMap.get(edgeKey);
 			System.out.println(edge.getEdgeID() + " : " + edge.getSourceID() + " ----> " + edge.getSinkID() + " delay " + edge.getDelay() + " domain " + edge.getDomainLocation());
 		}
 	}
@@ -168,24 +192,50 @@ public class CGraphManager {
 	}
 	
 	/*
+	 * 功能：根据底层拓扑图，生成实际操作用的图（两张图所有数据一致），只是操作图在找路过程中，可能会出现删边的情况
+	 */
+	public void generateOperateGraph() {
+		operateGraph.setVertexNum(graph.getVertexNum());
+		operateGraph.setEdgeNum(graph.getVertexNum());
+		operateGraph.setIsDeleteEdge(graph.getIsDeleteEdge());
+		operateGraph.vertexMap.putAll(graph.vertexMap);
+		operateGraph.edgeMap.putAll(graph.edgeMap);
+		operateGraph.domainVertexMap.putAll(graph.domainVertexMap);
+		operateGraph.domainBorderVertexMap.putAll(graph.domainBorderVertexMap);
+		operateGraph.domainEdgeMap.putAll(graph.domainEdgeMap);
+		operateGraph.domainFunctionSetMap.putAll(graph.domainFunctionSetMap);
+		operateGraph.allBorderVertexList.addAll(graph.allBorderVertexList);
+	}
+	
+	/*
+	 * 功能：在删边后，原来的抽象图边不能在使用（因为删边后，边界节点到其他边界节点的延时也会改变）
+	 * 需要更新抽象拓扑。如果不删边，原来的抽象图在后面的SFC部署中，也能继续使用
+	 */
+	public void updateAbstrateGraph() {
+		if (operateGraph.getIsDeleteEdge()) {
+			generateInitAbstrateGraph();
+		}
+	}
+	
+	/*
 	 * 功能：生成抽象拓扑图
 	 */
-	public void generateAbstrateGraph() {
+	public void generateInitAbstrateGraph() {
 		for (Integer domainKey : graph.domainBorderVertexMap.keySet()) {
 			for (Integer key : graph.domainBorderVertexMap.get(domainKey)) {
 				CVertex vertex = graph.vertexMap.get(key);
-				abstractGraph.vertexMap.put(vertex.getVertexID(), vertex);	//抽象边界节点
+				initAbstractGraph.vertexMap.put(vertex.getVertexID(), vertex);	//抽象边界节点
 				//构造域内边界节点之间的抽象边
 				for (Integer borderKey : vertex.minDelayToBorderMap.keySet()) {
 					if (borderKey != key) {
 						CEdge edge = new CEdge();
-						edge.setEdgeID(abstractGraph.edgeMap.size());
+						edge.setEdgeID(initAbstractGraph.edgeMap.size());
 						edge.setSinkID(key);
 						edge.setSourceID(borderKey);
 						edge.setType(Configure.INTRA_EDGE);
 						edge.setDelay(vertex.minDelayToBorderMap.get(borderKey));
 						edge.setDomainLocation(vertex.getDomainLocation());
-						abstractGraph.edgeMap.put(edge.getEdgeID(), edge);
+						initAbstractGraph.edgeMap.put(edge.getEdgeID(), edge);
 					}
 				}
 			}
@@ -195,68 +245,27 @@ public class CGraphManager {
 		for (Integer edgeKey : graph.edgeMap.keySet()) {
 			CEdge edge = graph.edgeMap.get(edgeKey);
 			if (edge.getType() == Configure.INTER_EDGE) {
-				edge.setEdgeID(abstractGraph.edgeMap.size());	//根据抽象图中边集合大小来重新确定抽象图中边的编号
-				abstractGraph.edgeMap.put(edge.getEdgeID(), edge);
+				edge.setEdgeID(initAbstractGraph.edgeMap.size());	//根据抽象图中边集合大小来重新确定抽象图中边的编号
+				initAbstractGraph.edgeMap.put(edge.getEdgeID(), edge);
 			}
 		}
+		
+		//抽象图中，各个域所能提供功能
+		initAbstractGraph.domainFunctionSetMap.putAll(graph.domainFunctionSetMap);
 	}
 	
 	/*
 	 * 功能：计算每个域中所有边界节点间的最短延时路径
 	 */
 	public boolean dijkstraAllBorderInEachDomain() {
-		for (Integer domainKey : graph.domainBorderVertexMap.keySet()) {
-			for (Integer vertexKey : graph.domainBorderVertexMap.get(domainKey)) {
-				if (!dijkstraAllInDomain(vertexKey, domainKey)) {
-					return false;
-				}
-			}
-		}
-		return true;
+		return graph.dijkstraAllBorderInEachDomain();
 	}
 	
 	/*
-	 * 功能：计算给定域中域中指定点到其他点的最短路径及最短延时
+	 * 功能：将每个域中的所有节点所能提供功能汇总，这个信息可以暴露给第三方
 	 */
-	public boolean dijkstraAllInDomain(int sourceID, int domainID) {
-		List<Integer> tempList = new ArrayList<Integer>();
-		tempList.addAll(graph.domainVertexMap.get(domainID));
-		
-		for (Integer key : tempList) {
-			graph.vertexMap.get(key).minDelayToBorderMap.put(sourceID, Configure.INF);
-			graph.vertexMap.get(key).previousVertexToBorderMap.put(sourceID, Configure.IMPOSSIBLENODE);
-		}
-		
-		graph.vertexMap.get(sourceID).minDelayToBorderMap.put(sourceID, (float)0);
-		
-		int it = sourceID;	//每次迭代的节点编号
-		float minDelay;
-		int minDelayVertex;
-		while (!tempList.isEmpty()) {
-			CVertex vertex = graph.vertexMap.get(it);
-			for (Integer edgeKey : vertex.outsideEdgeList) {
-				CEdge edge = graph.edgeMap.get(edgeKey);
-				if (edge.getDomainLocation() == vertex.getDomainLocation()) {
-					CVertex sinkVertex = graph.vertexMap.get(edge.getSinkID());
-					if (vertex.getTotalDelayToSourceID(sourceID) + edge.getDelay() < sinkVertex.getTotalDelayToSourceID(sourceID)) {
-						sinkVertex.minDelayToBorderMap.put(sourceID, vertex.getTotalDelayToSourceID(sourceID) + edge.getDelay());
-						sinkVertex.previousVertexToBorderMap.put(sourceID, it);
-					}
-				}
-			}
-			// 从剩余节点中，找出延迟总量最小的节点
-			minDelay = Configure.INF;
-			minDelayVertex = Configure.IMPOSSIBLENODE;
-			for (Integer vertexKey : tempList) {
-				if (minDelay > graph.vertexMap.get(vertexKey).getTotalDelayToSourceID(sourceID)) {
-					minDelay = graph.vertexMap.get(vertexKey).getTotalDelayToSourceID(sourceID);
-					minDelayVertex = graph.vertexMap.get(vertexKey).getVertexID();
-				}
-			}
-			it = minDelayVertex;
-			tempList.remove(tempList.indexOf(minDelayVertex));
-		}
-		return true;
+	private void functionDomain() {
+		graph.functionDomain();
 	}
 	
 	/*
@@ -264,54 +273,14 @@ public class CGraphManager {
 	 * 为节点处理邻接节点、入度边、出度边
 	 */
 	private void edgeDomain() {
-		for (Integer key : graph.edgeMap.keySet()) {
-			CEdge edge = graph.edgeMap.get(key);
-			//将边分入对应的域中
-			if (!graph.domainEdgeMap.containsKey(edge.getDomainLocation())) {
-				List<Integer> domainEdgeList = new ArrayList<Integer>();
-				domainEdgeList.add(edge.getEdgeID());
-				graph.domainEdgeMap.put(edge.getDomainLocation(), domainEdgeList);
-			} else {
-				graph.domainEdgeMap.get(edge.getDomainLocation()).add(edge.getEdgeID());
-			}
-			//处理节点的邻接信息
-			graph.vertexMap.get(edge.getSourceID()).outsideEdgeList.add(edge.getEdgeID());
-			graph.vertexMap.get(edge.getSinkID()).entryEdgeList.add(edge.getEdgeID());
-			graph.vertexMap.get(edge.getSourceID()).adjVertexList.add(edge.getSinkID());
-		}
+		graph.edgeDomain();
 	}
 	
 	/*
 	 * 功能：将每个域中的节点分域
 	 */
 	private void vertexDomain() {
-		for (Integer key : graph.vertexMap.keySet()) {
-			CVertex vertex = graph.vertexMap.get(key);
-			if (!graph.domainVertexMap.containsKey(vertex.getDomainLocation())) {
-				List<Integer> domainVertexList = new ArrayList<Integer>();
-				domainVertexList.add(vertex.getVertexID());
-				graph.domainVertexMap.put(vertex.getDomainLocation(), domainVertexList);
-			} else {
-				graph.domainVertexMap.get(vertex.getDomainLocation()).add(vertex.getVertexID());
-			}
-		}
-		
-		for (Integer key : graph.domainVertexMap.keySet()) {
-			List<Integer> domainVertexList = graph.domainVertexMap.get(key);
-			
-			for (Integer vertexKey : domainVertexList) {
-				CVertex vertex = graph.vertexMap.get(vertexKey);
-				if (vertex.getIsBorder()) {
-					if (!graph.domainBorderVertexMap.containsKey(vertex.getDomainLocation())) {
-						List<Integer> domainBorderVertexList = new ArrayList<Integer>();
-						domainBorderVertexList.add(vertex.getVertexID());
-						graph.domainBorderVertexMap.put(vertex.getDomainLocation(), domainBorderVertexList);
-					} else {
-						graph.domainBorderVertexMap.get(vertex.getDomainLocation()).add(vertex.getVertexID());
-					}
-				}
-			}
-		}
+		graph.vertexDomain();
 	}
 	
 	/*
@@ -360,6 +329,15 @@ public class CGraphManager {
 				scanner.nextInt(); //跳过文件中location列
 				vertex.setDomainLocation(scanner.nextInt());
 				vertex.setIsBorder(Configure.intToBool(scanner.nextInt()));
+				//为节点附加所能提供功能集合，为节点随机生成多少个功能集合
+				for (int i = 0; i < Configure.random.nextInt(Configure.FUNCTION_SEED) + 1; i++) {
+					Integer function = Configure.random.nextInt(Configure.FUNCTION_SEED) + 1;
+					// while循环保证了，为节点提供的功能集合，不能重复
+					while (vertex.functionSet.contains(function)) {
+						function = Configure.random.nextInt(Configure.FUNCTION_SEED) + 1;
+					}
+					vertex.functionSet.add(function);
+				}
 				graph.vertexMap.put(vertex.getVertexID(), vertex);
 			}
 			graph.setVertexNum(graph.vertexMap.size());

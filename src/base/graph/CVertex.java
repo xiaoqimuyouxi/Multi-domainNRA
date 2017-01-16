@@ -5,8 +5,10 @@ package base.graph;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class CVertex {
 	private int vertexID;	//节点编号
@@ -23,6 +25,7 @@ public class CVertex {
 	
 	public Map<Integer, Integer> previousVertexToBorderMap = new HashMap<Integer, Integer>();		//该节点到该域中边界节点的上一个节点
 	public Map<Integer, Float> minDelayToBorderMap = new HashMap<Integer, Float>();		//该节点到该域中边界节点的最短时延
+	public Set<Integer> functionSet = new HashSet<Integer>();	//改点能够提供的功能集合
 	
 	public CVertex() {
 		

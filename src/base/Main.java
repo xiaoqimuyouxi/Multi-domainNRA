@@ -4,6 +4,7 @@
 package base;
 
 import base.graph.CGraphManager;
+import base.traffic.SFCManager;
 
 public class Main {
 
@@ -21,6 +22,11 @@ public class Main {
 //		graphManager.testVertexAdjEdge();
 //		graphManager.testAllDomain();
 //		graphManager.testAbstractGraph();
+//		graphManager.testNodeFunctionSet();
+//		graphManager.testDomainFunctionSet();
+		SFCManager sfcManager = new SFCManager(graphManager);
+		sfcManager.generateSFCs();
+		sfcManager.testTheSFCMap();
 	}
 
 }
